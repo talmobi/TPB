@@ -7,11 +7,14 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.Arrays;
+import java.util.regex.Pattern;
 
 /**
  * https://www.ietf.org/rfc/rfc1459.txt
  * http://www.irchelp.org/irchelp/rfc/rfc.html
  * http://help.twitch.tv/customer/portal/articles/1302780-twitch-irc
+ * 
  */
 
 public class IrcBot implements Runnable {
@@ -32,6 +35,9 @@ public class IrcBot implements Runnable {
 
 	// twitch oauth key - www.twitchapps.com/tmi
 	String pass = "oauth:33a21tw2ih4lprqpoqfazzv2evzp8zl";
+
+	// IRC regex patterns
+	Pattern commandPattern = Pattern.compile("");
 
 	public IrcBot() {
 		new Thread(this).start();
@@ -74,6 +80,9 @@ public class IrcBot implements Runnable {
 				if (line.indexOf("004") >= 0) {
 					print("Success!\r\n");
 					break;
+				} else if (line.indexOf("433") >= 0) {
+					print(" Fail. Nick already in use.");
+					return;
 				}
 			}
 
@@ -83,14 +92,7 @@ public class IrcBot implements Runnable {
 
 			// read messages
 			while ((line = reader.readLine()) != null) { // blocks
-				if (line.startsWith("PING ")) {
-					print("PING ");
-					writer.write("PONG " + line.substring(5) + "\r\n");
-					writer.flush();
-					print("PONG\r\n");
-				} else {
-					handleMessage(line);
-				}
+				handleMessage(parseMessage(line));
 			}
 
 		} catch (UnknownHostException e) {
@@ -101,12 +103,51 @@ public class IrcBot implements Runnable {
 
 	}
 
+	/*
+	 * https://www.ietf.org/rfc/rfc1459.txt
+	 */
+	private void handleMessage(IRCMessage message) {
+
+		if (message.command.equals("PRIVMSG")) {
+			print(message.nick + ": " + message.text + "\r\n");
+		} else if (message.command.equals("PART")) {
+			if (message.nick == this.nick) {
+				print("~ YOU HAVE PARTED THE CHANNEL! ~");
+			}
+		} else if (message.command.equals("JOIN")) {
+			// ignore joins
+		} else if (message.command.equals("NAMES")) {
+			// ignore names
+		} else if (message.command.equals("332")) {
+			if (message.params.length == 1)
+				print(message.params[0]);
+			print("'s TOPIC: " + message.text + "\r\n");
+		} else if (message.command.equals("331")) {
+			if (message.params.length == 1)
+				print(message.params[0]);
+			print("'s has no TOPIC.\r\n");
+		} else if (message.command.equals("LIST")) {
+			// ignore list
+		} else if (message.command.equals("MODE")) {
+			// ignore mode
+		} else if (message.command.equals("KICK")) {
+			if (message.params.length > 0)
+				print(message.params[0] + " KICKED OUT.");
+		} else {
+			// return text field
+			print(message.nick + ": " + message.text);
+		}
+	}
+
 	class IRCMessage {
 		String nick;
 		String user;
 		String host;
+
 		String command;
-		String channel;
+
+		String[] params;
+
 		String text;
 
 		@Override
@@ -116,28 +157,63 @@ public class IrcBot implements Runnable {
 		}
 	}
 
-	private void handleMessage(String line) {
+	private IRCMessage parseMessage(String msg) {
+		int prefixEnd = -1;
+		String prefix = null;
 
-		String[] tokens = line.split(" ", 4);
-
-		if (tokens[1].equals("PRIVMSG")) {
-			String nick = "";
-			if (line.indexOf('!') >= 0)
-				nick = line.substring(1, line.indexOf('!'));
-			String text = "";
-			if (tokens.length >= 3)
-				text = tokens[3].substring(1);
-
-			System.out.println(nick + ": " + text);
-		} else {
-			System.out.println(line);
+		if (msg.startsWith(":")) {
+			prefixEnd = msg.indexOf(" ");
+			prefix = msg.substring(1, prefixEnd);
 		}
+
+		int trailingStart = msg.indexOf(" :");
+		String trailing = null;
+
+		if (trailingStart >= 0) {
+			trailing = msg.substring(trailingStart + 2);
+		} else {
+			trailingStart = msg.length();
+		}
+
+		String[] tokens = msg.substring(prefixEnd + 1, trailingStart)
+				.split(" ");
+
+		IRCMessage ircMessage = new IRCMessage();
+		ircMessage.command = tokens[0];
+
+		if (tokens.length > 1) {
+			ircMessage.params = Arrays.copyOfRange(tokens, 1, tokens.length);
+		}
+
+		// parse the prefix
+		int nickEnd = -1;
+		int userEnd = -1;
+		if (prefix != null) {
+			nickEnd = prefix.indexOf('!');
+			if (nickEnd >= 0) {
+				ircMessage.nick = prefix.substring(0, nickEnd);
+				userEnd = prefix.indexOf('@');
+			} else {
+				ircMessage.nick = prefix;
+			}
+			if (userEnd >= 0) {
+				ircMessage.user = prefix.substring(nickEnd + 1, userEnd);
+				ircMessage.host = prefix.substring(userEnd + 1);
+			}
+		}
+
+		ircMessage.text = trailing;
+		return ircMessage;
 	}
 
-	public void print(String str) throws IOException {
-		if (out != null) {
-			out.write(str);
-			out.flush();
+	public void print(String str) {
+		try {
+			if (out != null) {
+				out.write(str);
+				out.flush();
+			}
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
 		}
 	}
 
