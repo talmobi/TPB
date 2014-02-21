@@ -1,8 +1,5 @@
 package com.heartpirates;
 
-//import static enumeration.EnumerateWindows.Kernel32.*;
-//import static enumeration.EnumerateWindows.Psapi.*;
-//import static enumeration.EnumerateWindows.User32DLL.*;
 import java.awt.Robot;
 import java.awt.event.KeyEvent;
 
@@ -134,7 +131,7 @@ public class EnumerateWindows {
 		return false;
 	}
 
-	public static HWND findWindowByName(final String regex) {
+	public static HWND findWindowByName(final String contains) {
 		// pointer to the HWND
 		final PointerByReference pointer = new PointerByReference();
 		User32DLL.EnumWindows(new WNDENUMPROC() { // the callback function
@@ -153,7 +150,7 @@ public class EnumerateWindows {
 							return true; // skip empty and invisible windows
 
 						// check the window title if it matches
-						if (windowTitle.contains(regex)) {
+						if (windowTitle.contains(contains)) {
 							// save the HWND to the pointer
 							pointer.setPointer(hWnd.getPointer());
 							return false; // window found, stop search
