@@ -7,7 +7,6 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.net.UnknownHostException;
-import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -36,7 +35,7 @@ public class IrcBot implements Runnable {
 	String nick = "mooglebones";
 
 	// twitch oauth key - www.twitchapps.com/tmi
-	String pass = "oauth:33a21tw2ih4lprqpoqfazzv2evzp8zl";
+	String pass = "oauth:gd1qi7fkw98fhvwbq9rszq0pdlalamb";
 
 	// IRC regex patterns
 	Pattern commandPattern = Pattern.compile("");
@@ -52,18 +51,6 @@ public class IrcBot implements Runnable {
 		new Thread(this).start();
 
 		addMessageListener(new Screen());
-
-		BufferedReader inputReader = new BufferedReader(new InputStreamReader(
-				System.in));
-
-		String inLine = null;
-		try {
-			while ((inLine = inputReader.readLine()) != null) {
-				send(inLine);
-			}
-		} catch (IOException ioe) {
-			ioe.printStackTrace();
-		}
 	}
 
 	public void addMessageListener(MessageListener messageListener) {
@@ -120,6 +107,8 @@ public class IrcBot implements Runnable {
 			e.printStackTrace();
 		}
 
+		System.out.println("Socket closed: " + socket.isClosed());
+		System.out.println("Exiting IrcBot.");
 	}
 
 	/*
@@ -128,7 +117,12 @@ public class IrcBot implements Runnable {
 	private void handleMessage(IRCMessage message) {
 		fireMessage(message);
 
-		if (message.command.equals("PRIVMSG")) {
+		if (message.command.equals("PING")) {
+			System.out.print("PING ");
+			send("PONG " + message.params[0] + "\r\n");
+			System.out.print("PONG\r\n");
+		} else if (message.command.equals("PRIVMSG")) {
+			messageCount++;
 			// print(message.nick + ": " + message.text + "\r\n");
 		} else if (message.command.equals("PART")) {
 			if (message.nick == this.nick) {
@@ -172,12 +166,19 @@ public class IrcBot implements Runnable {
 
 		@Override
 		public String toString() {
-			return nick + " " + user + " " + host + " " + command + " "
-					+ channel + " " + text;
+			String pt = "";
+			if (params != null)
+				for (String s : params)
+					if (s != null)
+						pt += "s ";
+			return ("nick: " + nick + ", user: " + user + ", host: " + host
+					+ ", command: " + command + ", params: " + pt);
 		}
 	}
 
 	private IRCMessage parseMessage(String msg) {
+		// System.out.println(msg); // debug
+
 		int prefixEnd = -1;
 		String prefix = null;
 
@@ -188,9 +189,11 @@ public class IrcBot implements Runnable {
 
 		int trailingStart = msg.indexOf(" :");
 		String trailing = null;
+		boolean trailingExists = false;
 
 		if (trailingStart >= 0) {
 			trailing = msg.substring(trailingStart + 2);
+			trailingExists = true;
 		} else {
 			trailingStart = msg.length();
 		}
@@ -201,9 +204,15 @@ public class IrcBot implements Runnable {
 		IRCMessage ircMessage = new IRCMessage();
 		ircMessage.command = tokens[0];
 
-		if (tokens.length > 1) {
-			ircMessage.params = Arrays.copyOfRange(tokens, 1, tokens.length);
+		if (tokens.length > 1 || trailingExists) {
+			// shift tokens down and add trailing (text field) to last params
+			for (int i = 0; i < tokens.length - 1; i++)
+				tokens[i] = tokens[i + 1];
+			tokens[tokens.length - 1] = trailing;
+
+			// ircMessage.params = Arrays.copyOfRange(tokens, 1, tokens.length);
 		}
+		ircMessage.params = tokens;
 
 		// parse the prefix
 		int nickEnd = -1;
@@ -222,6 +231,7 @@ public class IrcBot implements Runnable {
 			}
 		}
 
+		// add also text field to text field (copy of params[params.length - 1]
 		ircMessage.text = trailing;
 		return ircMessage;
 	}
@@ -239,26 +249,43 @@ public class IrcBot implements Runnable {
 	}
 
 	private void fireMessage(IRCMessage ircMessage) {
-		messageCount++;
+
+		// debugIrcMessage();
 
 		for (MessageListener ml : messageListeners) {
 			ml.messageReceived(ircMessage);
 		}
 
-		if (System.currentTimeMillis() - lastSec > 1000) {
-			lastSec += 1000;
-			double num = messageCount
-					/ Math.max(
-							1d,
-							((System.currentTimeMillis() - startTime) / (1000 * 60)));
-			System.out.printf("%s messages /  minute.\n", num);
-		}
+		// if (System.currentTimeMillis() - lastSec > 1000) {
+		// lastSec += 1000;
+		// int num = (int) (messageCount / Math.max(1d,
+		// ((System.currentTimeMillis() - startTime) / (1000))));
+		// System.out.printf("%s messages /  SECOND.\n", num);
+		// }
 	}
 
-	public void send(String msg) throws IOException {
-		if (writer != null) {
-			writer.write(msg);
-			writer.flush();
+	@SuppressWarnings("unused")
+	private void debugIrcMessage(IRCMessage ircMessage) {
+		System.out
+				.printf("nick: %s, user: %s, host: %s, command: %s, params: %s, text: %s\r\nparams:",
+						ircMessage.nick, ircMessage.user, ircMessage.host,
+						ircMessage.command, ircMessage.params, ircMessage.text);
+
+		if (ircMessage.params != null)
+			for (String s : ircMessage.params)
+				if (s != null)
+					System.out.printf(s);
+		System.out.printf("\r\n\r\n");
+	}
+
+	public void send(String msg) {
+		try {
+			if (writer != null) {
+				writer.write(msg);
+				writer.flush();
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
 	}
 
@@ -268,7 +295,5 @@ public class IrcBot implements Runnable {
 
 	public static void main(String[] args) {
 		new IrcBot();
-
-		System.out.println("Closing.");
 	}
 }

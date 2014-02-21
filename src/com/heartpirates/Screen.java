@@ -34,6 +34,7 @@ public class Screen extends JFrame implements MessageListener {
 	// colours
 	Color bgColor = new Color(0x202020);
 	Color fgColor = new Color(0xCFBFAD);
+	Color transparentColor = new Color(0, 0, 0, 0);
 
 	public Screen() {
 		this.screen = this;
@@ -41,6 +42,7 @@ public class Screen extends JFrame implements MessageListener {
 	}
 
 	private void initialize() {
+		this.setAlwaysOnTop(true);
 		try {
 			Font f = Font.createFont(Font.TRUETYPE_FONT, Screen.class
 					.getClassLoader().getResourceAsStream("pixelmix.ttf"));
@@ -93,6 +95,7 @@ public class Screen extends JFrame implements MessageListener {
 		jTextArea.setFocusable(false);
 		jTextArea.setDragEnabled(false);
 		jTextArea.setEditable(false);
+		jTextArea.setBounds(5, 5, w - 5, h - 5);
 
 		jTextArea.addMouseListener(l);
 		jTextArea.addMouseMotionListener(l);
@@ -126,9 +129,9 @@ public class Screen extends JFrame implements MessageListener {
 		if (ircMessage.command.equals("PRIVMSG")) {
 			insertText(ircMessage.nick + ": " + ircMessage.text);
 		} else if (ircMessage.command.equals("PART")) {
-			insertText(ircMessage.nick + " Left.");
+			// insertText(ircMessage.nick + " PARTED.");
 		} else if (ircMessage.command.equals("JOIN")) {
-			insertText(ircMessage.nick + " Joined.");
+			// insertText(ircMessage.nick + " JOINED.");
 		} else {
 			insertText(ircMessage.nick + ": " + ircMessage.text);
 		}
