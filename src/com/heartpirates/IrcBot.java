@@ -8,6 +8,8 @@ import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.regex.Pattern;
 
 /**
@@ -39,8 +41,17 @@ public class IrcBot implements Runnable {
 	// IRC regex patterns
 	Pattern commandPattern = Pattern.compile("");
 
+	long messageCount = 0;
+	long startTime = System.currentTimeMillis();
+	long lastSec = System.currentTimeMillis();
+
+	private List<MessageListener> messageListeners = new LinkedList<MessageListener>();
+	private Screen screen;
+
 	public IrcBot() {
 		new Thread(this).start();
+
+		addMessageListener(new Screen());
 
 		BufferedReader inputReader = new BufferedReader(new InputStreamReader(
 				System.in));
@@ -53,6 +64,14 @@ public class IrcBot implements Runnable {
 		} catch (IOException ioe) {
 			ioe.printStackTrace();
 		}
+	}
+
+	public void addMessageListener(MessageListener messageListener) {
+		messageListeners.add(messageListener);
+	}
+
+	public void removeMessageListener(MessageListener messageListener) {
+		messageListeners.remove(messageListener);
 	}
 
 	@Override
@@ -71,7 +90,7 @@ public class IrcBot implements Runnable {
 			// login
 			writer.write("PASS " + pass + "\r\n");
 			writer.write("NICK " + nick + "\r\n");
-			writer.write("USER " + "guest :" + nick + "\r\n");
+			// writer.write("USER " + "guest :" + nick + "\r\n");
 			writer.flush();
 
 			print("logging in... ");
@@ -81,7 +100,7 @@ public class IrcBot implements Runnable {
 					print("Success!\r\n");
 					break;
 				} else if (line.indexOf("433") >= 0) {
-					print(" Fail. Nick already in use.");
+					print(" Fail. Nick already in use.\r\n");
 					return;
 				}
 			}
@@ -107,9 +126,10 @@ public class IrcBot implements Runnable {
 	 * https://www.ietf.org/rfc/rfc1459.txt
 	 */
 	private void handleMessage(IRCMessage message) {
+		fireMessage(message);
 
 		if (message.command.equals("PRIVMSG")) {
-			print(message.nick + ": " + message.text + "\r\n");
+			// print(message.nick + ": " + message.text + "\r\n");
 		} else if (message.command.equals("PART")) {
 			if (message.nick == this.nick) {
 				print("~ YOU HAVE PARTED THE CHANNEL! ~");
@@ -207,13 +227,31 @@ public class IrcBot implements Runnable {
 	}
 
 	public void print(String str) {
-		try {
-			if (out != null) {
-				out.write(str);
-				out.flush();
-			}
-		} catch (IOException ioe) {
-			ioe.printStackTrace();
+		// try {
+		// if (out != null) {
+		// out.write(str);
+		// out.flush();
+		// }
+		//
+		// } catch (IOException ioe) {
+		// ioe.printStackTrace();
+		// }
+	}
+
+	private void fireMessage(IRCMessage ircMessage) {
+		messageCount++;
+
+		for (MessageListener ml : messageListeners) {
+			ml.messageReceived(ircMessage);
+		}
+
+		if (System.currentTimeMillis() - lastSec > 1000) {
+			lastSec += 1000;
+			double num = messageCount
+					/ Math.max(
+							1d,
+							((System.currentTimeMillis() - startTime) / (1000 * 60)));
+			System.out.printf("%s messages /  minute.\n", num);
 		}
 	}
 
@@ -224,10 +262,13 @@ public class IrcBot implements Runnable {
 		}
 	}
 
+	interface MessageListener {
+		public void messageReceived(IRCMessage ircMessage);
+	}
+
 	public static void main(String[] args) {
 		new IrcBot();
 
 		System.out.println("Closing.");
 	}
-
 }
