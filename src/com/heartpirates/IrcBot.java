@@ -1,15 +1,20 @@
 package com.heartpirates;
 
+import java.awt.AWTException;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.Calendar;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.regex.Pattern;
+
+import com.heartpirates.robots.PkmnRobot;
 
 /**
  * https://www.ietf.org/rfc/rfc1459.txt
@@ -20,6 +25,8 @@ import java.util.regex.Pattern;
 
 public class IrcBot implements Runnable {
 
+	boolean robotMode = false;
+
 	BufferedWriter out = new BufferedWriter(new OutputStreamWriter(System.out));
 
 	Socket socket;
@@ -29,7 +36,7 @@ public class IrcBot implements Runnable {
 	int port = 6667;
 
 	// twitch channel (populated channel for testing)
-	String channel = "#twitchplayspokemon";
+	String channel = "#mooglebones";
 
 	// twitch user name
 	String nick = "mooglebones";
@@ -47,10 +54,20 @@ public class IrcBot implements Runnable {
 	private List<MessageListener> messageListeners = new LinkedList<MessageListener>();
 	private Screen screen;
 
-	public IrcBot() {
-		new Thread(this).start();
+	private TypingRobot robot = null;
 
-		addMessageListener(new Screen());
+	public IrcBot(boolean robotMode) {
+
+		try {
+			if (robotMode)
+				robot = new PkmnRobot();
+		} catch (AWTException e) {
+			e.printStackTrace();
+			System.out.println("Failed to start Robot - Exiting.");
+		}
+
+		addMessageListener(screen = new Screen());
+		new Thread(this).start();
 	}
 
 	public void addMessageListener(MessageListener messageListener) {
@@ -96,6 +113,10 @@ public class IrcBot implements Runnable {
 			writer.write("JOIN " + channel + "\r\n");
 			writer.flush();
 
+			// get test data
+			writer.write("JOIN " + "#twitchplayspokemon" + "\r\n");
+			writer.flush();
+
 			// read messages
 			while ((line = reader.readLine()) != null) { // blocks
 				handleMessage(parseMessage(line));
@@ -106,6 +127,9 @@ public class IrcBot implements Runnable {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+
+		robot.close();
+		screen.close();
 
 		System.out.println("Socket closed: " + socket.isClosed());
 		System.out.println("Exiting IrcBot.");
@@ -123,7 +147,7 @@ public class IrcBot implements Runnable {
 			System.out.print("PONG\r\n");
 		} else if (message.command.equals("PRIVMSG")) {
 			messageCount++;
-			// print(message.nick + ": " + message.text + "\r\n");
+			log(message);
 		} else if (message.command.equals("PART")) {
 			if (message.nick == this.nick) {
 				print("~ YOU HAVE PARTED THE CHANNEL! ~");
@@ -150,6 +174,34 @@ public class IrcBot implements Runnable {
 		} else {
 			// return text field
 			print(message.nick + ": " + message.text);
+		}
+	}
+
+	List<String> logList = new LinkedList<String>();
+	int logLimit = 1024 << 3;
+	long lastSave = System.currentTimeMillis();
+	long delaySave = 1000 * 60 * 60;
+
+	private void log(IRCMessage message) {
+		logList.add(message.toString());
+
+		int delta = (int) (System.currentTimeMillis() - lastSave);
+		if (logList.size() >= logLimit || delta > delaySave) {
+			lastSave = System.currentTimeMillis();
+			PrintWriter pw;
+			try {
+				pw = new PrintWriter("log_"
+						+ Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+						+ ".txt", "UTF-8");
+				for (String s : logList)
+					pw.println(s);
+				pw.flush();
+				pw.close();
+				logList.clear();
+				System.out.println("Saved to file.");
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
 		}
 	}
 
@@ -252,6 +304,9 @@ public class IrcBot implements Runnable {
 
 		// debugIrcMessage();
 
+		if (robot != null)
+			robot.parseAndFire(ircMessage.text);
+
 		for (MessageListener ml : messageListeners) {
 			ml.messageReceived(ircMessage);
 		}
@@ -289,11 +344,11 @@ public class IrcBot implements Runnable {
 		}
 	}
 
-	interface MessageListener {
+	public interface MessageListener {
 		public void messageReceived(IRCMessage ircMessage);
 	}
 
 	public static void main(String[] args) {
-		new IrcBot();
+		new IrcBot(true);
 	}
 }

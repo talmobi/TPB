@@ -3,8 +3,13 @@ package com.heartpirates;
 import java.awt.Robot;
 import java.awt.event.KeyEvent;
 
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+
 import com.sun.jna.Native;
+import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
+import com.sun.jna.platform.unix.X11;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinUser.WNDENUMPROC;
 import com.sun.jna.ptr.PointerByReference;
@@ -95,11 +100,37 @@ public class EnumerateWindows {
 	}
 
 	public static String getActiveWindowName() throws Exception {
-		char[] buffer = new char[MAX_TITLE_LENGTH * 2];
 
-		User32DLL.GetWindowTextW(User32DLL.GetForegroundWindow(), buffer,
-				MAX_TITLE_LENGTH);
-		return Native.toString(buffer);
+		if (Platform.isWindows()) {
+			char[] buffer = new char[MAX_TITLE_LENGTH * 2];
+
+			User32DLL.GetWindowTextW(User32DLL.GetForegroundWindow(), buffer,
+					MAX_TITLE_LENGTH);
+			return Native.toString(buffer);
+		}
+
+		if (Platform.isLinux() || Platform.isFreeBSD()) {
+			final X11 x11 = X11.INSTANCE;
+
+			X11.Display display = x11.XOpenDisplay(null);
+			X11.Window window = new X11.Window();
+			XLib.XGetInputFocus(display, window, Pointer.NULL);
+			X11.XTextProperty name = new X11.XTextProperty();
+			x11.XGetWMName(display, window, name);
+			return name.toString();
+		}
+
+		if (Platform.isMac()) {
+			final String script = "tell application \"System Events\"\n"
+					+ "\tname of application processes whose frontmost is tru\n"
+					+ "end";
+			ScriptEngine appleScript = new ScriptEngineManager()
+					.getEngineByName("AppleScript");
+			String result = (String) appleScript.eval(script);
+			return result;
+		}
+
+		return null;
 	}
 
 	public static String getActiveWindowProcessName() throws Exception {
@@ -210,5 +241,14 @@ public class EnumerateWindows {
 
 		public static native HWND FindWindowW(String lpClassName,
 				String lpWindowName);
+	}
+
+	static class XLib {
+		static {
+			Native.register("XLib");
+		}
+
+		public static native int XGetInputFocus(X11.Display display,
+				X11.Window focus_return, Pointer revert_to_return);
 	}
 }

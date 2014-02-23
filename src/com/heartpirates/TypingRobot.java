@@ -3,6 +3,7 @@ package com.heartpirates;
 import java.awt.AWTException;
 import java.awt.Robot;
 
+import com.heartpirates.EnumerateWindows.User32DLL;
 import com.sun.jna.platform.win32.WinDef.HWND;
 
 /**
@@ -13,15 +14,15 @@ import com.sun.jna.platform.win32.WinDef.HWND;
  */
 public class TypingRobot {
 
-	Robot robot;
-	String windowName = "VisualBoyAdvance";
+	protected Robot robot;
+	protected String windowName = "VisualBoyAdvance";
 
-	boolean tryForceSwitch = false;
-	HWND windowHandle; // JNA window handle
+	protected boolean tryForceSwitch = false; // false recommended
+	protected HWND windowHandle = null; // JNA window handle
 
 	public TypingRobot() throws AWTException {
 		robot = new Robot();
-		robot.setAutoDelay(250);
+		robot.setAutoDelay(50);
 	}
 
 	/**
@@ -33,9 +34,10 @@ public class TypingRobot {
 	 */
 	public boolean fireKeyEvent(int keycode, boolean force) {
 		System.out.println("Firing key event.");
-		
+
 		try {
 			if (EnumerateWindows.getActiveWindowName().contains(windowName)) {
+				windowHandle = User32DLL.GetForegroundWindow();
 				robot.keyPress(keycode);
 				robot.keyRelease(keycode);
 				return true;
@@ -60,5 +62,11 @@ public class TypingRobot {
 			// TODO linux/mac support
 		}
 		return false;
+	}
+	
+	public void parseAndFire(String text) {
+	}
+	
+	public void close() {
 	}
 }
