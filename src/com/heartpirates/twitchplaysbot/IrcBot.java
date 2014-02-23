@@ -1,12 +1,14 @@
-package com.heartpirates;
+package com.heartpirates.twitchplaysbot;
 
 import java.awt.AWTException;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.Calendar;
@@ -14,9 +16,13 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import com.heartpirates.robots.PkmnRobot;
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Output;
+import com.heartpirates.twitchplaysbot.robots.GBARobot;
 
 /**
+ * 
+ * 
  * https://www.ietf.org/rfc/rfc1459.txt
  * http://www.irchelp.org/irchelp/rfc/rfc.html
  * http://help.twitch.tv/customer/portal/articles/1302780-twitch-irc
@@ -26,11 +32,12 @@ import com.heartpirates.robots.PkmnRobot;
 public class IrcBot implements Runnable {
 
 	boolean robotMode = false;
+	private boolean logging = false;
 
-	BufferedWriter out = new BufferedWriter(new OutputStreamWriter(System.out));
+	BufferedWriter out = null;
 
 	Socket socket;
-	BufferedWriter writer = null;
+	BufferedWriter socketWriter = null;
 
 	String server = "irc.twitch.tv";
 	int port = 6667;
@@ -57,16 +64,25 @@ public class IrcBot implements Runnable {
 	private TypingRobot robot = null;
 
 	public IrcBot(boolean robotMode) {
+		this(robotMode, System.out);
+	}
+
+	public IrcBot(boolean robotMode, OutputStream out) {
+		if (out != null)
+			this.out = new BufferedWriter(new OutputStreamWriter(out));
 
 		try {
 			if (robotMode)
-				robot = new PkmnRobot();
+				robot = new GBARobot();
 		} catch (AWTException e) {
 			e.printStackTrace();
 			System.out.println("Failed to start Robot - Exiting.");
 		}
 
 		addMessageListener(screen = new Screen());
+	}
+
+	public void start() {
 		new Thread(this).start();
 	}
 
@@ -86,20 +102,20 @@ public class IrcBot implements Runnable {
 			socket = new Socket(server, port);
 
 			// create helper classes for reading/writing
-			BufferedReader reader = new BufferedReader(new InputStreamReader(
-					socket.getInputStream()));
-			writer = new BufferedWriter(new OutputStreamWriter(
+			BufferedReader socketReader = new BufferedReader(
+					new InputStreamReader(socket.getInputStream()));
+			socketWriter = new BufferedWriter(new OutputStreamWriter(
 					socket.getOutputStream()));
 
 			// login
-			writer.write("PASS " + pass + "\r\n");
-			writer.write("NICK " + nick + "\r\n");
+			socketWriter.write("PASS " + pass + "\r\n");
+			socketWriter.write("NICK " + nick + "\r\n");
 			// writer.write("USER " + "guest :" + nick + "\r\n");
-			writer.flush();
+			socketWriter.flush();
 
 			print("logging in... ");
 			String line = null;
-			while ((line = reader.readLine()) != null) { // blocks
+			while ((line = socketReader.readLine()) != null) { // blocks
 				if (line.indexOf("004") >= 0) {
 					print("Success!\r\n");
 					break;
@@ -110,15 +126,15 @@ public class IrcBot implements Runnable {
 			}
 
 			// auto join channel
-			writer.write("JOIN " + channel + "\r\n");
-			writer.flush();
+			socketWriter.write("JOIN " + channel + "\r\n");
+			socketWriter.flush();
 
 			// get test data
-			writer.write("JOIN " + "#twitchplayspokemon" + "\r\n");
-			writer.flush();
+			socketWriter.write("JOIN " + "#twitchplayspokemon" + "\r\n");
+			socketWriter.flush();
 
 			// read messages
-			while ((line = reader.readLine()) != null) { // blocks
+			while ((line = socketReader.readLine()) != null) { // blocks
 				handleMessage(parseMessage(line));
 			}
 
@@ -128,11 +144,29 @@ public class IrcBot implements Runnable {
 			e.printStackTrace();
 		}
 
-		robot.close();
-		screen.close();
+		if (robot != null)
+			robot.close();
 
-		System.out.println("Socket closed: " + socket.isClosed());
-		System.out.println("Exiting IrcBot.");
+		if (screen != null)
+			screen.close();
+
+		println("Socket closed: " + socket.isClosed());
+		println("Exiting IrcBot.");
+	}
+
+	public void print(String str) {
+		if (out == null)
+			return;
+
+		try {
+			out.write(str);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void println(String str) {
+		this.print(str + "\n");
 	}
 
 	/*
@@ -178,31 +212,61 @@ public class IrcBot implements Runnable {
 	}
 
 	List<String> logList = new LinkedList<String>();
-	int logLimit = 1024 << 3;
+	int logLimit = 1024 << 2;
 	long lastSave = System.currentTimeMillis();
-	long delaySave = 1000 * 60 * 60;
+	long delaySave = 1000 * 60 * 60 * 15 + 1000; // once an hour
 
 	private void log(IRCMessage message) {
+		if (!logging)
+			return;
+
 		logList.add(message.toString());
 
 		int delta = (int) (System.currentTimeMillis() - lastSave);
+
 		if (logList.size() >= logLimit || delta > delaySave) {
+			Kryo kryo = new Kryo();
 			lastSave = System.currentTimeMillis();
-			PrintWriter pw;
 			try {
-				pw = new PrintWriter("log_"
-						+ Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-						+ ".txt", "UTF-8");
-				for (String s : logList)
-					pw.println(s);
-				pw.flush();
-				pw.close();
-				logList.clear();
-				System.out.println("Saved to file.");
+				File file = getLogfile();
+				if (file == null) {
+					println("Couldn't save log file.");
+					return;
+				}
+				Output output = new Output(new FileOutputStream(file));
+
+				if (logList != null && logList.size() > 0) {
+					kryo.writeObject(output, logList);
+				}
+				output.close();
+				println("Saved to file.");
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
+
+			// clear list
+			logList.clear();
 		}
+	}
+
+	private File getLogfile() {
+		File dir = new File(".IrcBotLogfiles");
+		dir.mkdir();
+
+		if (dir.exists()) {
+			File file = null;
+			int count = 0;
+			while (file == null) {
+				String n = "log_"
+						+ Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+						+ "_" + count++;
+				file = new File(".IrcBotLogfiles/" + n);
+				if (file.exists())
+					file = null;
+			}
+			return file;
+		}
+		return null;
 	}
 
 	class IRCMessage {
@@ -288,18 +352,6 @@ public class IrcBot implements Runnable {
 		return ircMessage;
 	}
 
-	public void print(String str) {
-		// try {
-		// if (out != null) {
-		// out.write(str);
-		// out.flush();
-		// }
-		//
-		// } catch (IOException ioe) {
-		// ioe.printStackTrace();
-		// }
-	}
-
 	private void fireMessage(IRCMessage ircMessage) {
 
 		// debugIrcMessage();
@@ -335,9 +387,9 @@ public class IrcBot implements Runnable {
 
 	public void send(String msg) {
 		try {
-			if (writer != null) {
-				writer.write(msg);
-				writer.flush();
+			if (socketWriter != null) {
+				socketWriter.write(msg);
+				socketWriter.flush();
 			}
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -348,7 +400,14 @@ public class IrcBot implements Runnable {
 		public void messageReceived(IRCMessage ircMessage);
 	}
 
-	public static void main(String[] args) {
-		new IrcBot(true);
+	public void setLogging(boolean b) {
+		this.logging = b;
 	}
+
+	public static void main(String[] args) {
+		IrcBot ib = new IrcBot(true, System.out);
+		ib.setLogging(true);
+		ib.start();
+	}
+
 }
