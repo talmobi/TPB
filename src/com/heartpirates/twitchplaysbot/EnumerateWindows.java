@@ -18,9 +18,6 @@ import com.sun.jna.ptr.PointerByReference;
 
 public class EnumerateWindows {
 	private static final int MAX_TITLE_LENGTH = 1024;
-	public static final int PROCESS_VM_READ = 0x0010;
-	public static final int PROCESS_VM_WRITE = 0x0020;
-	public static final int PROCESS_VM_OPERATION = 0x0008;
 
 	public static void main(String[] args) throws Exception {
 		Robot robot = new Robot();
@@ -152,9 +149,12 @@ public class EnumerateWindows {
 		return Native.toString(buffer);
 	}
 
-	public static int getProcessId(String name) {
+	public static int getProcessId(String name) throws Exception {
 		HWND hWnd = findWindowByStartsWith("VisualBoyAdvance");
 
+		if (hWnd == null)
+			return -1;
+		
 		IntByReference refpid = new IntByReference(0);
 		User32DLL.GetWindowThreadProcessId(hWnd, refpid);
 		return refpid.getValue();
@@ -298,8 +298,10 @@ public class EnumerateWindows {
 		static {
 			Native.register("kernel32");
 		}
-		public static int PROCESS_QUERY_INFORMATION = 0x0400;
-		public static int PROCESS_VM_READ = 0x0010;
+		public static final int PROCESS_QUERY_INFORMATION = 0x0400;
+		public static final int PROCESS_VM_READ = 0x0010;
+		public static final int PROCESS_VM_WRITE = 0x0020;
+		public static final int PROCESS_VM_OPERATION = 0x0008;
 
 		public static native int GetLastError();
 
