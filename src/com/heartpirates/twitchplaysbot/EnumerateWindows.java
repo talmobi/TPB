@@ -1,8 +1,5 @@
 package com.heartpirates.twitchplaysbot;
 
-import java.awt.Robot;
-import java.awt.event.KeyEvent;
-
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 
@@ -11,95 +8,22 @@ import com.sun.jna.Native;
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 import com.sun.jna.platform.unix.X11;
+import com.sun.jna.platform.win32.WinDef.BOOLByReference;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinUser.WNDENUMPROC;
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.PointerByReference;
 
+/**
+ * http://www.romhacking.net/?page=news&newssearch=1&project=http://www.
+ * romhacking.net/documents/228/ http://nocash.emubase.de/gbatek.htm#gbaiomap
+ * http
+ * ://stackoverflow.com/questions/18849609/how-to-java-memory-manpulation-with
+ * -jna-on-windows
+ */
+
 public class EnumerateWindows {
 	private static final int MAX_TITLE_LENGTH = 1024;
-
-	public static void main(String[] args) throws Exception {
-		Robot robot = new Robot();
-
-		char[] buffer = new char[MAX_TITLE_LENGTH * 2];
-		User32DLL.GetWindowTextW(User32DLL.GetForegroundWindow(), buffer,
-				MAX_TITLE_LENGTH);
-		System.out.println("Active window title: " + Native.toString(buffer));
-
-		PointerByReference pointer = new PointerByReference();
-		User32DLL.GetWindowThreadProcessId(User32DLL.GetForegroundWindow(),
-				pointer);
-		Pointer process = Kernel32.OpenProcess(
-				Kernel32.PROCESS_QUERY_INFORMATION | Kernel32.PROCESS_VM_READ,
-				false, pointer.getValue());
-		Psapi.GetModuleBaseNameW(process, null, buffer, MAX_TITLE_LENGTH);
-		System.out.println("Active window process: " + Native.toString(buffer));
-
-		HWND gbaw = null;
-		HWND lastActive = null;
-
-		while (true) {
-			try {
-				System.out.println("Active window: " + getActiveWindowName());
-
-				if (!getActiveWindowName().contains("Visual")) {
-					lastActive = User32DLL.GetForegroundWindow();
-
-					System.out.println("Tring to switch -> ");
-
-					// setActiveWindow(findWindowByName("VisualBoy"));
-
-					setFocusWindow(findWindowByName("VisualBoy"));
-					int keycode = KeyEvent.VK_Z;
-					robot.keyPress(keycode);
-					robot.setAutoDelay(50);
-					robot.keyRelease(keycode);
-
-					System.out.println("After: " + getActiveWindowName());
-				}
-
-				if (getActiveWindowName().contains("Visual")) {
-					// save it
-					gbaw = User32DLL.GetForegroundWindow();
-
-					if (getActiveWindowName().contains("Visual")) {
-						System.out.println("Sending keypress");
-						int keycode = KeyEvent.VK_Z;
-						robot.keyPress(keycode);
-						robot.setAutoDelay(50);
-						robot.keyRelease(keycode);
-					}
-
-					// restore the last active window
-					setFocusWindow(lastActive);
-					setActiveWindow(lastActive);
-				}
-
-				Thread.sleep(200);
-			} catch (InterruptedException ie) {
-				ie.printStackTrace();
-			}
-		}
-
-	}
-
-	// debug (print out current active window title + process name)
-	public static void printActiveWindowInfo() throws Exception {
-		char[] buffer = new char[MAX_TITLE_LENGTH * 2];
-		User32DLL.GetWindowTextW(User32DLL.GetForegroundWindow(), buffer,
-				MAX_TITLE_LENGTH);
-		System.out.println("Active window title: " + Native.toString(buffer));
-
-		PointerByReference pointer = new PointerByReference();
-		User32DLL.GetWindowThreadProcessId(User32DLL.GetForegroundWindow(),
-				pointer);
-		Pointer process = Kernel32.OpenProcess(
-				Kernel32.PROCESS_QUERY_INFORMATION | Kernel32.PROCESS_VM_READ,
-				false, pointer.getValue());
-		Psapi.GetModuleBaseNameW(process, null, buffer, MAX_TITLE_LENGTH);
-		System.out.println("Active window process: " + Native.toString(buffer));
-	}
 
 	public static String getActiveWindowName() throws Exception {
 
@@ -149,12 +73,63 @@ public class EnumerateWindows {
 		return Native.toString(buffer);
 	}
 
+	public static String getWindowProcessName(HWND hWnd) throws Exception {
+		char[] buffer = new char[MAX_TITLE_LENGTH * 2];
+
+		PointerByReference pointer = new PointerByReference();
+		User32DLL.GetWindowThreadProcessId(hWnd, pointer);
+		Pointer process = Kernel32.OpenProcess(
+				Kernel32.PROCESS_QUERY_INFORMATION | Kernel32.PROCESS_VM_READ,
+				false, pointer.getValue());
+		Psapi.GetModuleBaseNameW(process, null, buffer, MAX_TITLE_LENGTH);
+
+		return Native.toString(buffer);
+	}
+
+	public static String getProcessName(Pointer process) throws Exception {
+		char[] buffer = new char[MAX_TITLE_LENGTH * 2];
+		Psapi.GetModuleBaseNameW(process, null, buffer, MAX_TITLE_LENGTH);
+		return Native.toString(buffer);
+	}
+
+	public static int processIdExists(final String name) throws Exception {
+		// pointer to the HWND
+		final IntByReference id = new IntByReference(0);
+		User32DLL.EnumWindows(new WNDENUMPROC() { // the callback function
+					@Override
+					public boolean callback(HWND hWnd, Pointer arg1) {
+						// buffer to save pid text
+						char[] buffer = new char[512];
+						String title;
+						try {
+							title = getWindowProcessName(hWnd);
+						} catch (Exception e) {
+							e.printStackTrace();
+							return true;
+						}
+
+						if (title.isEmpty())
+							return true; // skip empty and invisible windows
+
+						// check the window title if it matches
+						if (title.startsWith(name)) {
+							id.setValue(1);
+							return false; // window found, stop search
+						}
+						return true; // not found - continue searching
+					}
+
+				}, null);
+
+		return id.getValue();
+	}
+
 	public static int getProcessId(String name) throws Exception {
 		HWND hWnd = findWindowByStartsWith("VisualBoyAdvance");
 
 		if (hWnd == null)
 			return -1;
-		
+
 		IntByReference refpid = new IntByReference(0);
 		User32DLL.GetWindowThreadProcessId(hWnd, refpid);
 		return refpid.getValue();
@@ -175,7 +150,7 @@ public class EnumerateWindows {
 		return false;
 	}
 
-	public static HWND findWindowByName(final String contains) {
+	public static HWND findWindowByName(final String contains) throws Exception {
 		// pointer to the HWND
 		final PointerByReference pointer = new PointerByReference();
 		User32DLL.EnumWindows(new WNDENUMPROC() { // the callback function
@@ -204,10 +179,16 @@ public class EnumerateWindows {
 
 				}, null);
 
-		return new HWND(pointer.getPointer());
+		char[] buffer = new char[512];
+		HWND hWnd = new HWND(pointer.getPointer());
+		String title = getWindowProcessName(hWnd);
+		if (title.isEmpty() || !title.startsWith(contains))
+			return null;
+		return hWnd;
 	}
 
-	public static HWND findWindowByStartsWith(final String startsWith) {
+	public static HWND findWindowByStartsWith(final String startsWith)
+			throws Exception {
 		// pointer to the HWND
 		final PointerByReference pointer = new PointerByReference();
 		User32DLL.EnumWindows(new WNDENUMPROC() { // the callback function
@@ -236,7 +217,12 @@ public class EnumerateWindows {
 
 				}, null);
 
-		return new HWND(pointer.getPointer());
+		char[] buffer = new char[512];
+		HWND hWnd = new HWND(pointer.getPointer());
+		String title = getWindowProcessName(hWnd);
+		if (title.isEmpty() || !title.startsWith(startsWith))
+			return null;
+		return hWnd;
 	}
 
 	public static Pointer openProcess(int permissions, int pid) {
@@ -244,6 +230,11 @@ public class EnumerateWindows {
 		return pointer;
 	}
 
+	/**
+	 * @link 
+	 *       http://msdn.microsoft.com/en-us/library/windows/desktop/ms680553(v=vs
+	 *       .85).aspx
+	 */
 	public static Memory readMemory(Pointer process, long address, int size) {
 		IntByReference read = new IntByReference(0);
 		Memory mem = new Memory(size);
@@ -251,6 +242,11 @@ public class EnumerateWindows {
 		return mem;
 	}
 
+	/**
+	 * @link 
+	 *       http://msdn.microsoft.com/en-us/library/windows/desktop/ms681674(v=vs
+	 *       .85).aspx
+	 */
 	public static boolean writeMemory(Pointer process, long address, byte[] data) {
 		int size = data.length;
 		Memory buffer = new Memory(size);
