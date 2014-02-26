@@ -6,16 +6,21 @@ import java.awt.event.KeyEvent;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 
+import com.sun.jna.Memory;
 import com.sun.jna.Native;
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 import com.sun.jna.platform.unix.X11;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinUser.WNDENUMPROC;
+import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.PointerByReference;
 
 public class EnumerateWindows {
 	private static final int MAX_TITLE_LENGTH = 1024;
+	public static final int PROCESS_VM_READ = 0x0010;
+	public static final int PROCESS_VM_WRITE = 0x0020;
+	public static final int PROCESS_VM_OPERATION = 0x0008;
 
 	public static void main(String[] args) throws Exception {
 		Robot robot = new Robot();
@@ -147,6 +152,14 @@ public class EnumerateWindows {
 		return Native.toString(buffer);
 	}
 
+	public static int getProcessId(String name) {
+		HWND hWnd = findWindowByStartsWith("VisualBoyAdvance");
+
+		IntByReference refpid = new IntByReference(0);
+		User32DLL.GetWindowThreadProcessId(hWnd, refpid);
+		return refpid.getValue();
+	}
+
 	public static boolean setActiveWindow(HWND hWnd) throws Exception {
 		User32DLL.SetForegroundWindow(hWnd);
 		return false;
@@ -194,6 +207,83 @@ public class EnumerateWindows {
 		return new HWND(pointer.getPointer());
 	}
 
+	public static HWND findWindowByStartsWith(final String startsWith) {
+		// pointer to the HWND
+		final PointerByReference pointer = new PointerByReference();
+		User32DLL.EnumWindows(new WNDENUMPROC() { // the callback function
+
+					@Override
+					public boolean callback(HWND hWnd, Pointer arg1) {
+						// buffer to save window text
+						char[] buffer = new char[512];
+						// get window text
+						User32DLL.GetWindowTextW(hWnd, buffer, 512);
+						// transform buffer into native string
+						String windowTitle = Native.toString(buffer);
+
+						if (windowTitle.isEmpty()
+								|| !(User32DLL.IsWindowVisible(hWnd)))
+							return true; // skip empty and invisible windows
+
+						// check the window title if it matches
+						if (windowTitle.startsWith(startsWith)) {
+							// save the HWND to the pointer
+							pointer.setPointer(hWnd.getPointer());
+							return false; // window found, stop search
+						}
+						return true; // not found - continue searching
+					}
+
+				}, null);
+
+		return new HWND(pointer.getPointer());
+	}
+
+	public static Pointer openProcess(int permissions, int pid) {
+		Pointer pointer = Kernel32.OpenProcess(permissions, true, pid);
+		return pointer;
+	}
+
+	public static Memory readMemory(Pointer process, long address, int size) {
+		IntByReference read = new IntByReference(0);
+		Memory mem = new Memory(size);
+		Kernel32.ReadProcessMemory(process, address, mem, size, read);
+		return mem;
+	}
+
+	public static boolean writeMemory(Pointer process, long address, byte[] data) {
+		int size = data.length;
+		Memory buffer = new Memory(size);
+
+		for (int i = 0; i < size; i++) {
+			buffer.setByte(i, data[i]);
+		}
+
+		return Kernel32
+				.WriteProcessMemory(process, address, buffer, size, null);
+	}
+
+	public static long findDynAddress(Pointer process, int[] offsets,
+			long baseAddress) {
+		long pointer = baseAddress;
+
+		int size = 4;
+		Memory tmp = new Memory(size);
+		long pointerAddress = 0;
+
+		for (int i = 0; i < offsets.length; i++) {
+			if (i == 0) {
+				Kernel32.ReadProcessMemory(process, pointer, tmp, size, null);
+			}
+			pointerAddress = ((tmp.getInt(0) + offsets[i]));
+			if (i != offsets.length - 1)
+				Kernel32.ReadProcessMemory(process, pointerAddress, tmp, size,
+						null);
+		}
+
+		return pointerAddress;
+	}
+
 	// Native API:s
 	static class Psapi {
 		static {
@@ -214,7 +304,22 @@ public class EnumerateWindows {
 		public static native int GetLastError();
 
 		public static native Pointer OpenProcess(int dwDesiredAccess,
-				boolean bInheritHandle, Pointer pointer);
+				boolean bInheritHandle, int pid);
+
+		public static native Pointer OpenProcess(int dwDesiredAccess,
+				boolean bInheritHandle, Pointer pid);
+
+		public static native Pointer OpenProcess(int dwDesiredAccess,
+				boolean bInheritHandle, IntByReference pid);
+
+		// (windows) write to specific memory
+		public static native boolean WriteProcessMemory(Pointer p,
+				long address, Pointer buffer, int size, IntByReference written);
+
+		// (windows) read from specific memory
+		public static native boolean ReadProcessMemory(Pointer hProcess,
+				long intBadeAddress, Pointer outputBuffer, int nSize,
+				IntByReference outNumberOfBytesRead);
 	}
 
 	static class User32DLL {
@@ -229,6 +334,9 @@ public class EnumerateWindows {
 
 		public static native int GetWindowThreadProcessId(HWND hWnd,
 				PointerByReference pref);
+
+		public static native int GetWindowThreadProcessId(HWND hWnd,
+				IntByReference pid);
 
 		public static native HWND GetForegroundWindow();
 
