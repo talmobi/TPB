@@ -1,16 +1,14 @@
-package com.heartpirates.twitchplaysbot;
+package com.heartpirates.twitchplaysbot.robots;
 
 import java.awt.AWTException;
 import java.awt.Robot;
 
-import com.heartpirates.twitchplaysbot.EnumerateWindows.User32DLL;
+import com.heartpirates.twitchplaysbot.EnumerateWindows;
 import com.sun.jna.platform.win32.WinDef.HWND;
 
 /**
- * TypingRobot fires off key events to designated window (Windows).
- * 
- * @author Mollie
- * 
+ * TypingRobot fires off key events to designated window (Windows). Robots not
+ * recommended - see emulated registry data injection
  */
 public class TypingRobot {
 
@@ -37,7 +35,7 @@ public class TypingRobot {
 		try {
 			if (EnumerateWindows.getActiveWindowName().contains(windowName)) {
 				System.out.println("Firing key event.");
-				windowHandle = User32DLL.GetForegroundWindow();
+				windowHandle = EnumerateWindows.getForegroundWindow();
 				robot.keyPress(keycode);
 				robot.keyRelease(keycode);
 				return true;

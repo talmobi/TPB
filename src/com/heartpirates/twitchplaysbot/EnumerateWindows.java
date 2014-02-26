@@ -8,7 +8,6 @@ import com.sun.jna.Native;
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
 import com.sun.jna.platform.unix.X11;
-import com.sun.jna.platform.win32.WinDef.BOOLByReference;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinUser.WNDENUMPROC;
 import com.sun.jna.ptr.IntByReference;
@@ -57,6 +56,10 @@ public class EnumerateWindows {
 		}
 
 		return null;
+	}
+
+	public static HWND getForegroundWindow() {
+		return User32DLL.GetForegroundWindow();
 	}
 
 	public static String getActiveWindowProcessName() throws Exception {

@@ -1,6 +1,5 @@
 package com.heartpirates.twitchplaysbot;
 
-import java.awt.AWTException;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -14,11 +13,10 @@ import java.net.UnknownHostException;
 import java.util.Calendar;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.regex.Pattern;
 
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Output;
-import com.heartpirates.twitchplaysbot.robots.GBARobot;
+import com.heartpirates.twitchplaysbot.robots.TypingRobot;
 
 /**
  * 
@@ -31,7 +29,6 @@ import com.heartpirates.twitchplaysbot.robots.GBARobot;
 
 public class IrcBot implements Runnable {
 
-	boolean robotMode = false;
 	private boolean logging = false;
 
 	BufferedWriter out = null;
@@ -51,35 +48,29 @@ public class IrcBot implements Runnable {
 	// twitch oauth key - www.twitchapps.com/tmi
 	String pass = "oauth:gd1qi7fkw98fhvwbq9rszq0pdlalamb";
 
-	// IRC regex patterns
-	Pattern commandPattern = Pattern.compile("");
-
 	long messageCount = 0;
 	long startTime = System.currentTimeMillis();
 	long lastSec = System.currentTimeMillis();
 
 	private List<MessageListener> messageListeners = new LinkedList<MessageListener>();
-	private Screen screen;
 
+	private Screen screen;
+	private AGB agb;
 	private TypingRobot robot = null;
 
-	public IrcBot(boolean robotMode) {
-		this(robotMode, System.out);
+	public IrcBot(OutputStream os) {
+		if (os != null)
+			this.out = new BufferedWriter(new OutputStreamWriter(os));
 	}
 
-	public IrcBot(boolean robotMode, OutputStream out) {
-		if (out != null)
-			this.out = new BufferedWriter(new OutputStreamWriter(out));
+	public void setScreen(Screen screen) {
+		this.screen = screen;
+		addMessageListener(screen);
+	}
 
-		try {
-			if (robotMode)
-				robot = new GBARobot();
-		} catch (AWTException e) {
-			e.printStackTrace();
-			System.out.println("Failed to start Robot - Exiting.");
-		}
-
-		addMessageListener(screen = new Screen());
+	public void setAGB(AGB agb) {
+		this.agb = agb;
+		addMessageListener(agb);
 	}
 
 	public void start() {
@@ -157,7 +148,6 @@ public class IrcBot implements Runnable {
 	public void print(String str) {
 		if (out == null)
 			return;
-
 		try {
 			out.write(str);
 		} catch (IOException e) {
@@ -405,8 +395,16 @@ public class IrcBot implements Runnable {
 	}
 
 	public static void main(String[] args) {
-		IrcBot ib = new IrcBot(true, System.out);
-		ib.setLogging(true);
+		IrcBot ib = new IrcBot(System.out);
+		ib.setLogging(false);
+
+		ib.setScreen(new Screen());
+		try {
+			ib.setAGB(new AGB("VisualBoyAdvance"));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
 		ib.start();
 	}
 

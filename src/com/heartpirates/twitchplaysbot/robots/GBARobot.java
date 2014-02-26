@@ -3,8 +3,6 @@ package com.heartpirates.twitchplaysbot.robots;
 import java.awt.AWTException;
 import java.awt.event.KeyEvent;
 
-import com.heartpirates.twitchplaysbot.TypingRobot;
-
 public class GBARobot extends TypingRobot {
 
 	int autoDelay = 20;
