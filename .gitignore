@@ -1,2 +1,4 @@
 .IrcBotLogfiles/
-/bin
+bin/
+emu/
+res/
